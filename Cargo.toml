@@ -1,0 +1,8 @@
+[package]
+name = "osc_to_beyond"
+version = "0.1.0"
+authors = ["JoshuaBatty <joshpbatty@gmail.com>"]
+
+[dependencies]
+pangolin = { path = "../pangolin"}
+rosc = "0.1"

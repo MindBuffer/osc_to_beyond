@@ -1,0 +1,7 @@
+[package]
+name = "pangolin"
+version = "0.1.0"
+authors = ["JoshuaBatty <joshpbatty@gmail.com>"]
+
+[dependencies]
+libloading = "0.4"
