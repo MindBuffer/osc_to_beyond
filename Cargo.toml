@@ -4,5 +4,5 @@ version = "0.1.0"
 authors = ["JoshuaBatty <joshpbatty@gmail.com>"]
 
 [dependencies]
-pangolin = { path = "../pangolin"}
+pangolin = { path = "pangolin"}
 rosc = "0.1"
