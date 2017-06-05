@@ -48,7 +48,17 @@ fn run_osc(frame_sender: mpsc::Sender<LayerFrame>) {
     let mut layer_map = HashMap::new();
 
     // Check for waiting OSC messages.
-    'osc: while let Ok((size, _addr)) = osc_socket.recv_from(&mut osc_buffer) {
+    'osc: loop {
+        let (size, _addr) = match osc_socket.recv_from(&mut osc_buffer) {
+            Ok(packet) => packet,
+            Err(err) => {
+                // If we receive an error, print it and sleep for a bit before trying to receive again.
+                println!("UdpSocket::recv_from Err: {}", err);
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                continue 'osc;
+            },
+        };
+
         let packet = rosc::decoder::decode(&osc_buffer[..size]).unwrap();
 
         // We're expecting a single `OscMessage` per packet.
@@ -58,7 +68,7 @@ fn run_osc(frame_sender: mpsc::Sender<LayerFrame>) {
                 // OpenFrameworks sends us a bundle where the first packet is always a message
                 match bundle.content.swap_remove(0) {
                     OscPacket::Message(msg) => msg,
-                    _ => unreachable!(),
+                    packet => panic!("unexpected OscPacket: {:?}", packet),
                 }
             }
         };
@@ -157,6 +167,7 @@ fn run_osc(frame_sender: mpsc::Sender<LayerFrame>) {
 
                 // If the channel is closed, assume we are finished and exit the osc loop.
                 if frame_sender.send(complete_frame).is_err() {
+                    println!("OSC thread: channel has closed, finishing up");
                     break 'osc;
                 }
             }
@@ -216,7 +227,7 @@ fn main() {
     std::thread::spawn(move || run_osc(frame_sender));
 
     // Send frames to beyond roughly 60 times per second.
-    let sleep_interval = std::time::Duration::from_millis(15);
+    let sleep_interval = std::time::Duration::from_millis(5);
 
     // Track the most recently received frame per layer.
     let mut layer_frames = HashMap::new();

@@ -4,4 +4,5 @@ version = "0.1.0"
 authors = ["JoshuaBatty <joshpbatty@gmail.com>"]
 
 [dependencies]
+find_folder = "0.3"
 libloading = "0.4"
