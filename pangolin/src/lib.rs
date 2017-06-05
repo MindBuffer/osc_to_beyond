@@ -61,8 +61,11 @@ pub struct BeyondLaserPoint {
 
 pub fn load_library() -> libloading::Result<Library> {
     let exe_path = std::env::current_exe()?;
-    let pangolin_path = find_folder::Search::ParentsThenKids(7, 7).of(exe_path).for_folder("pangolin").unwrap();
-    let path = pangolin_path.join("/BEYONDIO.dll");
+    let pangolin_path = find_folder::Search::ParentsThenKids(7, 7)
+        .of(exe_path.parent().unwrap().into())
+        .for_folder("pangolin")
+        .unwrap();
+    let path = pangolin_path.join("BEYONDIO.dll");
     //let path = concat!(env!("CARGO_MANIFEST_DIR"), "/BEYONDIO.dll");
     let lib = Library::new(path)?;
     Ok(lib)
