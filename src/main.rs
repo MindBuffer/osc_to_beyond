@@ -32,12 +32,49 @@ const NUM_OUTPUTS: usize = 5;
 /// The receiver receives packets as fast as possible, updates the `Layer` map and sends new frames
 /// to the main thread when available.
 fn run_osc(frame_sender: mpsc::Sender<LayerFrame>) {
+    use std::sync::atomic::Ordering;
+
+    let received_packet = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let received_packet_clone = received_packet.clone();
+    let frame_sender_clone = frame_sender.clone();
+
+    // Spawn a thread that clears the lasers if we haven't received a packet in 3 seconds.
+    std::thread::spawn(move || {
+        let mut have_cleared_lasers = false;
+
+        loop {
+            if received_packet_clone.load(Ordering::Relaxed) {
+                have_cleared_lasers = false;
+                received_packet_clone.store(false, Ordering::Relaxed);
+            } else if !have_cleared_lasers {
+                have_cleared_lasers = true;
+                println!("No packet in 3 seconds. Clearing lasers...");
+
+                // Send the frame to the main pangolin thread.
+                for layer in ["/layer1", "/layer2", "/layer3"].iter() {
+                    println!("\tClearing {}", layer);
+                    let empty_frame = LayerFrame {
+                        frame: vec![],
+                        layer: layer.to_string(),
+                        outputs: (0i32..NUM_OUTPUTS as i32).collect(),
+                    };
+                    if frame_sender_clone.send(empty_frame).is_err() {
+                        println!("OSC thread: channel has closed, finishing up");
+                        break;
+                    }
+                }
+                println!("\tAll layers cleared.");
+            }
+
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        }
+    });
 
     // Listen for packets on 9001.
     let osc_socket = std::net::UdpSocket::bind("0.0.0.0:9001").unwrap();
 
     // Re-use a buffer for receiving and decoding OSC via UDP packets.
-    let mut osc_buffer = [0u8; 20_000];
+    let mut osc_buffer = [0u8; 64_000];
 
     // Track the last time that a time stamp was received.
     // We do this in order to remove old blobs from the layer map to avoid leaking memory in the
@@ -58,6 +95,9 @@ fn run_osc(frame_sender: mpsc::Sender<LayerFrame>) {
                 continue 'osc;
             },
         };
+
+        // Tell the laser clearing thread that we have a packet and not to clear.
+        received_packet.store(true, Ordering::Relaxed);
 
         let packet = rosc::decoder::decode(&osc_buffer[..size]).unwrap();
 
@@ -87,7 +127,7 @@ fn run_osc(frame_sender: mpsc::Sender<LayerFrame>) {
 
         // Ignore the messages that just keep the udp stream alive
         if "/alive" == &message.addr {
-            continue;
+            continue 'osc;
         }
 
         // Indicates if the packet is the last for the frame at the given time_stamp.
@@ -159,14 +199,14 @@ fn run_osc(frame_sender: mpsc::Sender<LayerFrame>) {
                 }
 
                 // Send the frame to the main pangolin thread.
-                let complete_frame = LayerFrame {
+                let layer_frame = LayerFrame {
                     frame: frame,
                     layer: message.addr,
                     outputs: outputs,
                 };
 
                 // If the channel is closed, assume we are finished and exit the osc loop.
-                if frame_sender.send(complete_frame).is_err() {
+                if frame_sender.send(layer_frame).is_err() {
                     println!("OSC thread: channel has closed, finishing up");
                     break 'osc;
                 }
@@ -238,7 +278,7 @@ fn main() {
     loop {
         // Receive pending `LayerFrame`s, sent from the OSC receiver thread.
         for LayerFrame { frame, layer, outputs } in frame_receiver.try_iter() {
-            layer_frames.insert(layer, (frame, outputs));
+            layer_frames.insert(layer.clone(), (frame, outputs));
         }
 
         // If Pangolin isn't ready there's nothing more to do.
